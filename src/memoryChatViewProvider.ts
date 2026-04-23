@@ -164,7 +164,8 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
 
     const scored = transcript
       .map((entry) => {
-        const score = this.tokenize(entry.text).filter((token) => qTokens.has(token)).length;
+        const entryTokens = Array.from(this.tokenize(entry.text));
+        const score = entryTokens.filter((token: string) => qTokens.has(token)).length;
         return { entry, score };
       })
       .filter((item) => item.score > 0)
