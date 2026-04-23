@@ -2,6 +2,8 @@
 
 A sidebar chat extension that keeps a persistent transcript and answers new queries using prior chat context.
 
+Repository: https://github.com/SID-6921/memory-chat-extension
+
 ## What It Does
 
 - Stores every user + assistant message in persistent extension storage.
@@ -42,3 +44,7 @@ git push -u origin main
 
 - VS Code public APIs do not expose private internal Copilot transcript history.
 - This extension keeps its own transcript memory to deliver history-aware responses.
+
+## License
+
+MIT
