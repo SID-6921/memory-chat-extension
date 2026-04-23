@@ -4,6 +4,14 @@ import { MemoryChatViewProvider } from "./memoryChatViewProvider";
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new MemoryChatViewProvider(context);
 
+  void provider.trackCurrentWorkspaceVisit();
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      void provider.trackCurrentWorkspaceVisit();
+    })
+  );
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("memoryChat.sidebar", provider)
   );

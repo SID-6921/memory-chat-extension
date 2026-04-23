@@ -10,9 +10,19 @@ interface TranscriptEntry {
   timestamp: string;
 }
 
+interface ProjectVisit {
+  id: string;
+  name: string;
+  fsPath: string;
+  lastSeenIso: string;
+  openCount: number;
+}
+
 const TRANSCRIPT_KEY = "memoryChat.transcript";
 const QUERY_HISTORY_KEY = "memoryChat.queryHistory";
+const PROJECT_MEMORY_KEY = "memoryChat.projectMemory";
 const MAX_TRANSCRIPT_ITEMS = 400;
+const MAX_PROJECT_ITEMS = 200;
 
 export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -20,6 +30,41 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
+  }
+
+  public async trackCurrentWorkspaceVisit(): Promise<void> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return;
+    }
+
+    const current = this.getProjectMemory();
+    const now = new Date().toISOString();
+    const byId = new Map(current.map((project) => [project.id, project]));
+
+    for (const folder of folders) {
+      const id = folder.uri.fsPath.toLowerCase();
+      const existing = byId.get(id);
+      if (existing) {
+        existing.lastSeenIso = now;
+        existing.name = folder.name;
+        existing.openCount += 1;
+      } else {
+        byId.set(id, {
+          id,
+          name: folder.name,
+          fsPath: folder.uri.fsPath,
+          lastSeenIso: now,
+          openCount: 1
+        });
+      }
+    }
+
+    const next = Array.from(byId.values())
+      .sort((a, b) => b.lastSeenIso.localeCompare(a.lastSeenIso))
+      .slice(0, MAX_PROJECT_ITEMS);
+
+    await this.context.globalState.update(PROJECT_MEMORY_KEY, next);
   }
 
   public resolveWebviewView(view: vscode.WebviewView): void {
@@ -100,8 +145,12 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
   private async generateAnswer(question: string): Promise<string> {
     const lower = question.toLowerCase();
 
+    if (this.isRecentProjectsQuestion(lower)) {
+      return this.describeRecentProjects();
+    }
+
     if (this.isProjectQuestion(lower)) {
-      return this.describeWorkspace();
+      return [this.describeWorkspace(), "", this.describeRecentProjects(5)].join("\n");
     }
 
     if (this.isHistoryQuestion(lower)) {
@@ -128,6 +177,10 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
     return /(project|workspace|repo|repository|where are we working|current folder)/.test(lower);
   }
 
+  private isRecentProjectsQuestion(lower: string): boolean {
+    return /(recent project|projects i worked|what projects|project history|repos i worked|worked on recently)/.test(lower);
+  }
+
   private isHistoryQuestion(lower: string): boolean {
     return /(history|what did we discuss|what did i ask|transcript|recent chat)/.test(lower);
   }
@@ -142,6 +195,24 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
     const activeFile = vscode.window.activeTextEditor?.document.fileName;
     const activePart = activeFile ? ` Active file: ${path.basename(activeFile)}.` : "";
     return `You are currently working in workspace folder(s): ${names}.${activePart}`;
+  }
+
+  private describeRecentProjects(limit = 8): string {
+    const projects = this.getProjectMemory();
+    if (projects.length === 0) {
+      return "I do not have project memory yet. Open a project and I will start tracking it.";
+    }
+
+    const recent = projects
+      .sort((a, b) => b.lastSeenIso.localeCompare(a.lastSeenIso))
+      .slice(0, limit)
+      .map((project) => `- ${project.name} (${project.fsPath}) | opened ${project.openCount} time(s)`);
+
+    return [
+      `I remember ${projects.length} project(s) across sessions.`,
+      "Most recent projects:",
+      ...recent
+    ].join("\n");
   }
 
   private describeHistory(): string {
@@ -188,6 +259,10 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
 
   private getTranscript(): TranscriptEntry[] {
     return this.context.globalState.get<TranscriptEntry[]>(TRANSCRIPT_KEY, []);
+  }
+
+  private getProjectMemory(): ProjectVisit[] {
+    return this.context.globalState.get<ProjectVisit[]>(PROJECT_MEMORY_KEY, []);
   }
 
   private async appendEntry(entry: TranscriptEntry): Promise<void> {
