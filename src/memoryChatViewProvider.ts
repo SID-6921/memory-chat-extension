@@ -18,11 +18,23 @@ interface ProjectVisit {
   openCount: number;
 }
 
+interface CodeMatch {
+  file: string;
+  line: number;
+  text: string;
+  score: number;
+}
+
 const TRANSCRIPT_KEY = "memoryChat.transcript";
 const QUERY_HISTORY_KEY = "memoryChat.queryHistory";
 const PROJECT_MEMORY_KEY = "memoryChat.projectMemory";
 const MAX_TRANSCRIPT_ITEMS = 400;
 const MAX_PROJECT_ITEMS = 200;
+const STOP_WORDS = new Set([
+  "what", "where", "when", "which", "with", "from", "this", "that", "have", "need",
+  "please", "show", "find", "pull", "code", "codes", "codebase", "about", "into",
+  "there", "their", "they", "your", "ours", "mine", "working", "project", "repo"
+]);
 
 export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -145,6 +157,23 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
   private async generateAnswer(question: string): Promise<string> {
     const lower = question.toLowerCase();
 
+    if (this.isCodebaseQuestion(lower)) {
+      const matches = await this.searchCodebase(question, 6);
+      if (matches.length === 0) {
+        return [
+          "I searched your codebase but did not find a strong match.",
+          "Try adding 1-3 exact keywords, function names, or class names."
+        ].join("\n");
+      }
+
+      const lines = matches.map((match) => `- ${match.file}:${match.line} -> ${match.text}`);
+      return [
+        "I pulled these matches from your codebase:",
+        ...lines,
+        "Ask me to open one and explain it, and I can continue from here."
+      ].join("\n");
+    }
+
     if (this.isRecentProjectsQuestion(lower)) {
       return this.describeRecentProjects();
     }
@@ -175,6 +204,10 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
 
   private isProjectQuestion(lower: string): boolean {
     return /(project|workspace|repo|repository|where are we working|current folder)/.test(lower);
+  }
+
+  private isCodebaseQuestion(lower: string): boolean {
+    return /(codebase|source code|in code|find in code|search code|pull from code|where is .* in|show .* file)/.test(lower);
   }
 
   private isRecentProjectsQuestion(lower: string): boolean {
@@ -245,6 +278,70 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
       .map((item) => item.entry);
 
     return scored;
+  }
+
+  private async searchCodebase(question: string, limit: number): Promise<CodeMatch[]> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return [];
+    }
+
+    const tokens = Array.from(this.tokenize(question)).filter((token) => !STOP_WORDS.has(token));
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const files = await vscode.workspace.findFiles(
+      "**/*.{ts,tsx,js,jsx,py,go,rs,java,cs,c,cpp,h,md,json,yml,yaml,html,css,scss}",
+      "**/{node_modules,.git,out,dist,build,.next,coverage}/**",
+      250
+    );
+
+    const matches: CodeMatch[] = [];
+
+    for (const file of files) {
+      let content: string;
+      try {
+        const bytes = await vscode.workspace.fs.readFile(file);
+        content = Buffer.from(bytes).toString("utf8");
+      } catch {
+        continue;
+      }
+
+      const lines = content.split(/\r?\n/);
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i].trim();
+        if (!line) {
+          continue;
+        }
+
+        const lower = line.toLowerCase();
+        let score = 0;
+        for (const token of tokens) {
+          if (lower.includes(token)) {
+            score += 1;
+          }
+        }
+
+        if (score > 0) {
+          matches.push({
+            file: vscode.workspace.asRelativePath(file, false),
+            line: i + 1,
+            text: line.slice(0, 140),
+            score
+          });
+        }
+      }
+    }
+
+    return matches
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+        return a.text.length - b.text.length;
+      })
+      .slice(0, limit);
   }
 
   private tokenize(value: string): Set<string> {
