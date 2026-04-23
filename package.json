@@ -3,7 +3,7 @@
   "displayName": "Memory Chat Assistant",
   "description": "A VS Code sidebar chat with persistent transcript memory and workspace-aware answers.",
   "version": "0.0.1",
-  "publisher": "local-dev",
+  "publisher": "SiddhardhaNanda",
   "license": "MIT",
   "repository": {
     "type": "git",
