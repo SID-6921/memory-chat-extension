@@ -382,16 +382,16 @@ export class MemoryChatViewProvider implements vscode.WebviewViewProvider {
       chat.innerHTML = "";
       for (const entry of entries) {
         const row = document.createElement("div");
-        row.className = `entry ${entry.role}`;
+        row.className = "entry " + entry.role;
         row.textContent = entry.text;
 
         const meta = document.createElement("div");
         meta.className = "meta";
-        meta.textContent = `${entry.role} • ${new Date(entry.timestamp).toLocaleTimeString()}`;
+        meta.textContent = entry.role + " • " + new Date(entry.timestamp).toLocaleTimeString();
         row.appendChild(meta);
         chat.appendChild(row);
       }
-      count.textContent = `${entries.length} msgs`;
+      count.textContent = entries.length + " msgs";
       chat.scrollTop = chat.scrollHeight;
     }
 
